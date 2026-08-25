@@ -5,7 +5,7 @@ import {
   XCircle, AlertCircle, Stethoscope, Plus, Filter, Download, X, Navigation,
   Building2, BookOpen, GraduationCap, Menu, Star, Accessibility, Droplet,
   ParkingCircle, UtensilsCrossed, Landmark, Trees, ShieldCheck, Pencil, Trash2,
-  LogOut, Wifi, WifiOff,
+  LogOut, Wifi, WifiOff, Eye, EyeOff,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
@@ -105,7 +105,8 @@ function normalizeTimetable(entries) {
 
 const api = {
   health: () => fetch(`${API_BASE.replace(/\/api$/, '')}/health`).then((r) => r.ok),
-  login: (email, password) => apiRequest('/auth/login', { method: 'POST', body: { email, password } }),
+  login: (email, password, role) => apiRequest('/auth/login', { method: 'POST', body: { email, password, expectedRole: role } }),
+  register: (payload) => apiRequest('/auth/register', { method: 'POST', body: payload }),
 
   students: (token) => apiRequest('/students', { token }).then((rows) => rows.map(normalizeStudent)),
   subjects: (token) => apiRequest('/subjects', { token }).then((rows) => rows.map(normalizeSubject)),
@@ -434,14 +435,14 @@ function StatusBadge({ status }) {
 function StatCard({ icon: Icon, label, value, sub, tint }) {
   const { c } = useApp();
   return (
-    <Glass className="p-5 flex items-start justify-between hover:-translate-y-0.5 transition-transform duration-300">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide" style={{ color: c.subtext }}>{label}</p>
-        <p className="text-2xl font-bold mt-1.5" style={{ color: c.text }}>{value}</p>
-        {sub && <p className="text-xs mt-1" style={{ color: c.faint }}>{sub}</p>}
+    <Glass className="p-3.5 sm:p-5 flex items-start justify-between hover:-translate-y-0.5 transition-transform duration-300 min-w-0">
+      <div className="min-w-0 flex-1 pr-2">
+        <p className="text-[11px] sm:text-xs font-medium uppercase tracking-wide truncate" style={{ color: c.subtext }}>{label}</p>
+        <p className="text-xl sm:text-2xl font-bold mt-1 sm:mt-1.5 truncate" style={{ color: c.text }}>{value}</p>
+        {sub && <p className="text-[11px] sm:text-xs mt-0.5 sm:mt-1 truncate" style={{ color: c.faint }}>{sub}</p>}
       </div>
-      <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0" style={{ background: tint || 'rgba(10,132,255,0.12)' }}>
-        <Icon size={20} style={{ color: PALETTE.appleBlue }} />
+      <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0" style={{ background: tint || 'rgba(10,132,255,0.12)' }}>
+        <Icon size={16} className="sm:w-5 sm:h-5" style={{ color: PALETTE.appleBlue }} />
       </div>
     </Glass>
   );
@@ -520,7 +521,12 @@ const NAV_ITEMS = [
 ];
 
 function Sidebar({ mobileOpen, onClose }) {
-  const { c, tab, setTab } = useApp();
+  const { c, tab, setTab, role, setShowLogin } = useApp();
+  const isVisitor = role === 'visitor';
+  const navItems = isVisitor
+    ? NAV_ITEMS.filter((item) => item.id === 'campus' || item.id === 'announcements')
+    : NAV_ITEMS;
+
   return (
     <>
       {mobileOpen && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
@@ -538,7 +544,7 @@ function Sidebar({ mobileOpen, onClose }) {
           </div>
         </div>
         <nav className="flex-1 flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = tab === item.id;
             const Icon = item.icon;
             return (
@@ -554,17 +560,32 @@ function Sidebar({ mobileOpen, onClose }) {
             );
           })}
         </nav>
-        <Glass className="p-4 mt-4">
-          <p className="text-xs font-semibold" style={{ color: c.text }}>Attendance health</p>
-          <p className="text-xs mt-0.5" style={{ color: c.faint }}>Keep every subject above 75%</p>
-        </Glass>
+        {isVisitor ? (
+          <Glass className="p-4 mt-4 text-center">
+            <p className="text-xs font-semibold" style={{ color: PALETTE.amber }}>Visitor Access</p>
+            <p className="text-xs mt-0.5 mb-2.5" style={{ color: c.faint }}>Campus Navigation & Announcements</p>
+            <button
+              onClick={() => setShowLogin && setShowLogin(true)}
+              className="w-full py-2 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90 shadow-sm"
+              style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}
+            >
+              Sign In / Register
+            </button>
+          </Glass>
+        ) : (
+          <Glass className="p-4 mt-4">
+            <p className="text-xs font-semibold" style={{ color: c.text }}>Attendance health</p>
+            <p className="text-xs mt-0.5" style={{ color: c.faint }}>Keep every subject above 75%</p>
+          </Glass>
+        )}
       </aside>
     </>
   );
 }
 
 function Topbar({ onMenuClick }) {
-  const { c, setTab, apiOnline, session, signOut, data } = useApp();
+  const { c, setTab, apiOnline, session, signOut, data, role, setShowLogin } = useApp();
+  const isVisitor = role === 'visitor';
   const STUDENTS = data.students;
   const SUBJECTS = data.subjects;
   const ANNOUNCEMENTS = data.announcements;
@@ -577,14 +598,16 @@ function Topbar({ onMenuClick }) {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
     const out = [];
-    STUDENTS.forEach((s) => { if (s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)) out.push({ type: 'Student', label: s.name, sub: s.usn, tab: 'students' }); });
-    SUBJECTS.forEach((s) => { if (s.name.toLowerCase().includes(q)) out.push({ type: 'Subject', label: s.name, sub: s.faculty, tab: 'attendance' }); });
+    if (!isVisitor) {
+      STUDENTS.forEach((s) => { if (s.name.toLowerCase().includes(q) || s.usn.toLowerCase().includes(q)) out.push({ type: 'Student', label: s.name, sub: s.usn, tab: 'students' }); });
+      SUBJECTS.forEach((s) => { if (s.name.toLowerCase().includes(q)) out.push({ type: 'Subject', label: s.name, sub: s.faculty, tab: 'attendance' }); });
+    }
     NAV_BUILDINGS.forEach((b) => { if (b.label.toLowerCase().includes(q)) out.push({ type: 'Building', label: b.label, sub: 'Campus map', tab: 'campus' }); });
     ANNOUNCEMENTS.forEach((a) => { if (a.title.toLowerCase().includes(q)) out.push({ type: 'Announcement', label: a.title, sub: a.author, tab: 'announcements' }); });
     return out.slice(0, 6);
-  }, [query, STUDENTS, SUBJECTS, ANNOUNCEMENTS]);
+  }, [query, STUDENTS, SUBJECTS, ANNOUNCEMENTS, isVisitor]);
 
-  const initials = session ? session.user.name.split(' ').map((n) => n[0]).slice(0, 2).join('') : 'AS';
+  const initials = session ? session.user.name.split(' ').map((n) => n[0]).slice(0, 2).join('') : (isVisitor ? 'VS' : 'AS');
 
   return (
     <div className="sticky top-0 z-30 px-4 sm:px-6 lg:px-8 pt-5 pb-3">
@@ -598,7 +621,7 @@ function Topbar({ onMenuClick }) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search students, subjects, buildings…"
+              placeholder={isVisitor ? "Search buildings, locations, notices…" : "Search students, subjects, buildings…"}
               className="bg-transparent outline-none text-sm flex-1 min-w-0"
               style={{ color: c.text }}
             />
@@ -645,7 +668,13 @@ function Topbar({ onMenuClick }) {
         </div>
 
         <div className="hidden sm:block"><ThemeToggle /></div>
-        {!session && <div className="hidden md:block"><RoleSwitch /></div>}
+        {!session && !isVisitor && <div className="hidden md:block"><RoleSwitch /></div>}
+
+        {isVisitor && (
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full" style={{ background: 'rgba(245,166,35,0.15)', color: '#F5A623' }}>
+            <User size={12} /> Visitor Mode
+          </span>
+        )}
 
         {apiOnline && (
           <span className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(18,185,129,0.15)', color: '#0F9D6E' }}>
@@ -653,27 +682,41 @@ function Topbar({ onMenuClick }) {
           </span>
         )}
 
+        {!session && (
+          <button
+            onClick={() => setShowLogin && setShowLogin(true)}
+            className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-white shrink-0 hover:opacity-90 shadow-sm"
+            style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}
+          >
+            Sign In / Register
+          </button>
+        )}
+
         <div className="relative">
-          <button onClick={() => setUserMenuOpen((o) => !o)} className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #8B5CF6)` }}>
+          <button onClick={() => setUserMenuOpen((o) => !o)} className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: isVisitor ? `linear-gradient(135deg, ${PALETTE.amber}, #F59E0B)` : `linear-gradient(135deg, ${PALETTE.appleBlue}, #8B5CF6)` }}>
             {initials}
           </button>
           {userMenuOpen && (
-            <Glass className="absolute top-full mt-2 right-0 w-56 p-2 z-40">
+            <Glass className="absolute top-full mt-2 right-0 w-60 p-2 z-40">
               {session ? (
                 <>
                   <div className="px-3 py-2">
                     <p className="text-sm font-semibold" style={{ color: c.text }}>{session.user.name}</p>
-                    <p className="text-xs" style={{ color: c.faint }}>{session.user.email}</p>
+                    <p className="text-xs" style={{ color: c.faint }}>{session.user.email} · {session.user.role}</p>
                   </div>
                   <button onClick={() => { signOut(); setUserMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-black/5" style={{ color: PALETTE.softRed }}>
                     <LogOut size={14} /> Sign out
                   </button>
                 </>
               ) : (
-                <div className="px-3 py-2">
-                  <p className="text-xs" style={{ color: c.faint }}>
-                    {apiOnline ? 'Backend detected — sign in from the banner above for live data.' : 'Showing demo data. Run the backend locally to sign in.'}
-                  </p>
+                <div className="p-2 space-y-1">
+                  <button
+                    onClick={() => { setShowLogin && setShowLogin(true); setUserMenuOpen(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium hover:bg-black/5"
+                    style={{ color: c.text }}
+                  >
+                    <GraduationCap size={14} className="text-blue-500" /> Student or Teacher Sign In
+                  </button>
                 </div>
               )}
             </Glass>
@@ -1204,8 +1247,8 @@ function TimetablePage() {
         <h1 className="text-xl sm:text-2xl font-bold" style={{ color: c.text }}>Timetable</h1>
         <p className="text-sm mt-1" style={{ color: c.subtext }}>Sem 5 · CSE · Section A</p>
       </div>
-      <Glass className="p-4 sm:p-6 overflow-x-auto">
-        <table className="w-full border-separate" style={{ borderSpacing: '6px' }}>
+      <Glass className="p-3 sm:p-6 overflow-x-auto">
+        <table className="w-full min-w-[600px] border-separate" style={{ borderSpacing: '6px' }}>
           <thead>
             <tr>
               <th className="text-xs font-medium w-20"></th>
@@ -1573,8 +1616,8 @@ function CampusPage() {
           )}
         </div>
 
-        <Glass className="p-3 sm:p-5 order-1 lg:order-2 lg:col-span-3 overflow-hidden">
-          <svg viewBox="0 0 920 620" className="w-full h-auto" style={{ maxHeight: 560 }}>
+        <Glass className="p-2 sm:p-5 order-1 lg:order-2 lg:col-span-3 overflow-x-auto">
+          <svg viewBox="0 0 920 620" className="w-full h-auto min-w-[500px] sm:min-w-0" style={{ maxHeight: 560 }}>
             <defs>
               <style>{`
                 .nav-path-bg { stroke: ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(28,28,30,0.12)'}; stroke-width: 4; fill: none; stroke-linecap: round; }
@@ -1636,46 +1679,278 @@ function PageSkeleton() {
   );
 }
 
-function LoginScreen({ onLogin, onCancel }) {
+function VisitorRestricted({ onSignIn }) {
+  const { c } = useApp();
+  return (
+    <Glass className="p-8 sm:p-12 text-center max-w-lg mx-auto my-12 flex flex-col items-center">
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'rgba(245,166,35,0.15)', color: '#F5A623' }}>
+        <ShieldCheck size={32} />
+      </div>
+      <h2 className="text-xl font-bold mb-2" style={{ color: c.text }}>Restricted Access for Visitors</h2>
+      <p className="text-sm mb-6 max-w-md" style={{ color: c.subtext }}>
+        Student and teacher personal details, attendance records, timetables, and directories are private. Please sign in or register to access these details.
+      </p>
+      <button
+        onClick={onSignIn}
+        className="px-6 py-2.5 rounded-full text-sm font-semibold text-white transition-all shadow-md hover:opacity-90"
+        style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}
+      >
+        Sign In or Register
+      </button>
+    </Glass>
+  );
+}
+
+function LoginScreen({ onLogin, onCancel, onVisitor }) {
+  const [role, setRole] = useState('STUDENT'); // 'STUDENT' | 'TEACHER'
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+
+  // Common fields
   const [email, setEmail] = useState('aditya.sharma@uvce.ac.in');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('Password123!');
+  const [name, setName] = useState('');
+
+  // Student specific fields
+  const [usn, setUsn] = useState('1VE22CS099');
+  const [departmentId, setDepartmentId] = useState('CSE');
+  const [semester, setSemester] = useState('5');
+  const [sectionId, setSectionId] = useState('A');
+
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const submit = async (e) => {
+  const handleRoleChange = (newRole) => {
+    setRole(newRole);
+    setError('');
+    if (mode === 'login') {
+      setEmail(newRole === 'TEACHER' ? 'anitha.rao@uvce.ac.in' : 'aditya.sharma@uvce.ac.in');
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
+
     try {
-      const result = await api.login(email, password);
-      onLogin(result);
+      if (mode === 'login') {
+        const result = await api.login(email, password, role);
+        onLogin(result);
+      } else {
+        const payload = {
+          name,
+          email,
+          password,
+          role,
+          departmentId: departmentId || 'CSE',
+          ...(role === 'STUDENT'
+            ? {
+                usn,
+                semester: parseInt(semester, 10) || 5,
+                sectionId: sectionId || 'A',
+              }
+            : {}),
+        };
+        const result = await api.register(payload);
+        onLogin(result);
+      }
     } catch (err) {
-      setError(err.message || 'Could not sign in');
+      setError(err.message || 'Authentication failed');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4" style={{ background: '#F8FAFC', fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif" }}>
-      <div className="w-full max-w-sm rounded-3xl p-8" style={{ background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 10px 40px rgba(30,41,59,0.12)', border: '1px solid rgba(255,255,255,0.9)' }}>
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5" style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}>
-          <GraduationCap size={22} color="#fff" />
+    <div className="min-h-screen w-full flex items-center justify-center p-3 sm:p-4" style={{ background: '#F8FAFC', fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif" }}>
+      <div className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-3xl p-5 sm:p-8" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 20px 50px rgba(30,41,59,0.14)', border: '1px solid rgba(255,255,255,0.9)' }}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}>
+              <GraduationCap size={22} color="#fff" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">Smart Campus UVCE</h1>
+              <p className="text-xs text-slate-500">Access Portal</p>
+            </div>
+          </div>
         </div>
-        <h1 className="text-xl font-bold" style={{ color: '#1C1C1E' }}>Sign in to Smart Campus</h1>
-        <p className="text-sm mt-1 mb-6" style={{ color: '#6E7480' }}>Backend detected at {API_BASE}</p>
-        <form onSubmit={submit} className="space-y-3">
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" className="w-full px-4 py-2.5 rounded-xl text-sm outline-none" style={{ background: 'rgba(120,120,128,0.1)', color: '#1C1C1E' }} />
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" className="w-full px-4 py-2.5 rounded-xl text-sm outline-none" style={{ background: 'rgba(120,120,128,0.1)', color: '#1C1C1E' }} />
-          {error && <p className="text-xs" style={{ color: PALETTE.softRed }}>{error}</p>}
-          <button disabled={busy} type="submit" className="w-full py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-60" style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}>
-            {busy ? 'Signing in…' : 'Sign in'}
+
+        {/* Role Selector: Student vs Teacher */}
+        <div className="flex rounded-2xl p-1 mb-5" style={{ background: 'rgba(120,120,128,0.12)' }}>
+          <button
+            type="button"
+            onClick={() => handleRoleChange('STUDENT')}
+            className="flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+            style={{
+              background: role === 'STUDENT' ? '#FFFFFF' : 'transparent',
+              color: role === 'STUDENT' ? PALETTE.appleBlue : '#6E7480',
+              boxShadow: role === 'STUDENT' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+            }}
+          >
+            <GraduationCap size={15} /> Student
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRoleChange('TEACHER')}
+            className="flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+            style={{
+              background: role === 'TEACHER' ? '#FFFFFF' : 'transparent',
+              color: role === 'TEACHER' ? PALETTE.appleBlue : '#6E7480',
+              boxShadow: role === 'TEACHER' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+            }}
+          >
+            <BookOpen size={15} /> Teacher / Faculty
+          </button>
+        </div>
+
+        {/* Mode Toggle: Log In vs Sign Up */}
+        <div className="flex items-center justify-between mb-4 border-b border-slate-200/60 pb-2">
+          <h2 className="text-sm font-semibold text-slate-800">
+            {role === 'STUDENT' ? 'Student' : 'Teacher'} {mode === 'login' ? 'Sign In' : 'Account Registration'}
+          </h2>
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setError(''); }}
+              className={`font-semibold ${mode === 'login' ? 'text-blue-600 underline' : 'text-slate-400'}`}
+            >
+              Sign In
+            </button>
+            <span className="text-slate-300">|</span>
+            <button
+              type="button"
+              onClick={() => { setMode('register'); setError(''); }}
+              className={`font-semibold ${mode === 'register' ? 'text-blue-600 underline' : 'text-slate-400'}`}
+            >
+              Sign Up
+            </button>
+          </div>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          {mode === 'register' && (
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              type="text"
+              placeholder="Full Name (e.g. Rahul Sharma)"
+              className="w-full px-4 py-2.5 rounded-xl text-sm outline-none bg-slate-100/70 focus:bg-white focus:ring-2 focus:ring-blue-400 text-slate-800"
+            />
+          )}
+
+          <input
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            placeholder={role === 'STUDENT' ? 'Student Email (e.g. aditya.sharma@uvce.ac.in)' : 'Teacher Email (e.g. anitha.rao@uvce.ac.in)'}
+            className="w-full px-4 py-2.5 rounded-xl text-sm outline-none bg-slate-100/70 focus:bg-white focus:ring-2 focus:ring-blue-400 text-slate-800"
+          />
+
+          <div className="relative">
+            <input
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password (min. 8 chars)"
+              className="w-full px-4 py-2.5 pr-11 rounded-xl text-sm outline-none bg-slate-100/70 focus:bg-white focus:ring-2 focus:ring-blue-400 text-slate-800"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 flex items-center justify-center"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+
+          {mode === 'register' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  required
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  type="text"
+                  placeholder="Department (e.g. CSE)"
+                  className="px-4 py-2 rounded-xl text-xs outline-none bg-slate-100/70 text-slate-800"
+                />
+                {role === 'STUDENT' ? (
+                  <input
+                    required
+                    value={usn}
+                    onChange={(e) => setUsn(e.target.value)}
+                    type="text"
+                    placeholder="USN (e.g. 1VE22CS099)"
+                    className="px-4 py-2 rounded-xl text-xs outline-none bg-slate-100/70 text-slate-800"
+                  />
+                ) : (
+                  <div className="px-4 py-2 rounded-xl text-xs text-slate-400 bg-slate-100/40 flex items-center">
+                    Faculty Member
+                  </div>
+                )}
+              </div>
+
+              {role === 'STUDENT' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-xs outline-none bg-slate-100/70 text-slate-800"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                      <option key={s} value={s}>Semester {s}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={sectionId}
+                    onChange={(e) => setSectionId(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-xs outline-none bg-slate-100/70 text-slate-800"
+                  >
+                    <option value="A">Section A</option>
+                    <option value="B">Section B</option>
+                    <option value="C">Section C</option>
+                  </select>
+                </div>
+              )}
+            </>
+          )}
+
+          {error && <p className="text-xs p-2.5 rounded-xl bg-red-50 text-red-600 border border-red-200">{error}</p>}
+
+          <button
+            disabled={busy}
+            type="submit"
+            className="w-full py-3 rounded-2xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-60 shadow-md hover:shadow-lg"
+            style={{ background: `linear-gradient(135deg, ${PALETTE.appleBlue}, #38BDF8)` }}
+          >
+            {busy
+              ? 'Processing…'
+              : mode === 'login'
+              ? `Sign In as ${role === 'STUDENT' ? 'Student' : 'Teacher'}`
+              : `Register as ${role === 'STUDENT' ? 'Student' : 'Teacher'}`}
           </button>
         </form>
-        <button onClick={onCancel} className="w-full text-center text-xs mt-4" style={{ color: '#9AA1AC' }}>Continue with demo data instead</button>
-        <p className="text-xs mt-5 pt-4" style={{ color: '#9AA1AC', borderTop: '1px solid rgba(28,28,30,0.08)' }}>
-          Seeded demo accounts — password Password123!<br />Teacher: anitha.rao@uvce.ac.in · Student: aditya.sharma@uvce.ac.in
-        </p>
+
+        {/* Visitor Option Section */}
+        <div className="mt-6 pt-5 border-t border-slate-200/80 text-center">
+          <button
+            type="button"
+            onClick={onVisitor}
+            className="w-full py-2.5 px-4 rounded-2xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200/80 transition-colors flex items-center justify-center gap-2 border border-slate-200"
+          >
+            <Navigation size={14} className="text-blue-500" /> Continue as Visitor / Guest
+          </button>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Visitors can view campus map navigation & notices without signing in.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -1732,13 +2007,24 @@ export default function SmartCampusApp() {
     }
     setSession(null);
     setLiveData(null);
+    setRole('visitor');
+    setTab('campus');
   };
 
   const handleLogin = (loginResult) => {
     setSession({ accessToken: loginResult.accessToken, user: loginResult.user });
+    const userRole = loginResult.user.role.toLowerCase();
+    setRole(userRole);
+    setTab('dashboard');
     setShowLogin(false);
   };
-  // ---------------------------------------------------------------------
+
+  const handleVisitorMode = () => {
+    setSession(null);
+    setRole('visitor');
+    setTab('campus');
+    setShowLogin(false);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -1770,20 +2056,20 @@ export default function SmartCampusApp() {
     currentStudent,
   };
 
-  const ctx = { c, dark, setDark, role: effectiveRole, setRole, tab, setTab, showToast, apiOnline, session, signOut, refreshLiveData, data };
+  const ctx = { c, dark, setDark, role: effectiveRole, setRole, tab, setTab, showToast, apiOnline, session, signOut, refreshLiveData, data, setShowLogin };
 
   const pages = {
-    dashboard: effectiveRole === 'student' ? <DashboardStudent /> : <DashboardTeacher />,
-    attendance: <AttendancePage />,
-    students: <StudentsPage />,
-    timetable: <TimetablePage />,
+    dashboard: effectiveRole === 'visitor' ? <VisitorRestricted onSignIn={() => setShowLogin(true)} /> : (effectiveRole === 'student' ? <DashboardStudent /> : <DashboardTeacher />),
+    attendance: effectiveRole === 'visitor' ? <VisitorRestricted onSignIn={() => setShowLogin(true)} /> : <AttendancePage />,
+    students: effectiveRole === 'visitor' ? <VisitorRestricted onSignIn={() => setShowLogin(true)} /> : <StudentsPage />,
+    timetable: effectiveRole === 'visitor' ? <VisitorRestricted onSignIn={() => setShowLogin(true)} /> : <TimetablePage />,
     announcements: <AnnouncementsPage />,
     campus: <CampusPage />,
-    profile: <ProfilePage />,
+    profile: effectiveRole === 'visitor' ? <VisitorRestricted onSignIn={() => setShowLogin(true)} /> : <ProfilePage />,
   };
 
   if (showLogin && !session) {
-    return <LoginScreen onLogin={handleLogin} onCancel={() => setShowLogin(false)} />;
+    return <LoginScreen onLogin={handleLogin} onCancel={() => setShowLogin(false)} onVisitor={handleVisitorMode} />;
   }
 
   if (session && liveLoading) {
@@ -1810,7 +2096,7 @@ export default function SmartCampusApp() {
         <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
         <div className="flex-1 min-w-0 relative">
-          {apiOnline && !session && !bannerDismissed && (
+          {apiOnline && !session && effectiveRole !== 'visitor' && !bannerDismissed && (
             <div className="px-4 sm:px-6 lg:px-8 pt-4">
               <div className="rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 text-sm" style={{ background: 'rgba(18,185,129,0.12)', color: '#0F9D6E' }}>
                 <span className="flex items-center gap-2"><Wifi size={14} /> Backend detected — sign in for live data instead of the demo dataset.</span>
